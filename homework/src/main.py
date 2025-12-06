@@ -38,8 +38,10 @@ def main():
     X_train, X_test, y_train, y_test = load_data("data/winequality-red.csv")
 
     # -------------------------------------------------------------------------
-    # TODO: Inicia el tracking de MLflow
-    with mlflow.start_run():
+    mlflow.set_tracking_uri("file:mlruns")
+    mlflow.set_experiment("wine-quality-prediction")
+    run_name = f"{args.model}_model_run"
+    with mlflow.start_run(run_name=run_name):
 
         if args.model == "knn":
             model = KNeighborsRegressor(n_neighbors=args.n_neighbors)
