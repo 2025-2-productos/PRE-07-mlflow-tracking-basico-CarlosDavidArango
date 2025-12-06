@@ -1,75 +1,87 @@
-# Se importa MLflow y uuid
-import uuid
+"""Main script"""
+
+import argparse
 
 import mlflow
+import pandas as pd
+from sklearn.linear_model import ElasticNet
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsRegressor
 
-from homework.src._internals.calculate_metrics import calculate_metrics
-from homework.src._internals.parse_argument import parse_argument
-from homework.src._internals.prepare_data import prepare_data
-from homework.src._internals.print_metrics import print_metrics
-from homework.src._internals.save_model_if_better import save_model_if_better
-from homework.src._internals.select_model import select_model
 
-FILE_PATH = "data/winequality-red.csv"
-TEST_SIZE = 0.25
-RANDOM_STATE = 123456
+def load_data(file_path: str):
+    """Load data from file"""
+
+    df = pd.read_csv(file_path)
+
+    y = df["quality"]
+    X = df.drop(columns=["quality"])
+
+    return train_test_split(X, y, test_size=0.2, random_state=42)
 
 
 def main():
+    """Main function"""
 
-    args = parse_argument()
-    model = select_model(args)
+    # -------------------------------------------------------------------------
+    # Configuración de MLflow - DEBE ir ANTES del entrenamiento
+    mlflow.set_tracking_uri("sqlite:///mlruns.db")  # Usa ruta relativa
+    mlflow.set_experiment("Homework")
+    # -------------------------------------------------------------------------
 
-    x_train, x_test, y_train, y_test = prepare_data(
-        file_path=FILE_PATH,
-        test_size=TEST_SIZE,
-        random_state=RANDOM_STATE,
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, required=True)
+    parser.add_argument("--n_neighbors", type=int, default=5)
+    args = parser.parse_args()
 
-    ## Se inicia un experimento en MLflow
-    mlflow.set_experiment("wine_quality_experiment")
-    run_name = f"{args.model}_{uuid.uuid4().hex[:8]}"
-    with mlflow.start_run(run_name=run_name):
+    X_train, X_test, y_train, y_test = load_data("data/winequality-red.csv")
 
-        ## log de los parámetros generales y del tipo de modelo
-        mlflow.log_param("file_path", FILE_PATH)
-        mlflow.log_param("test_size", TEST_SIZE)
-        mlflow.log_param("random_state", RANDOM_STATE)
-        mlflow.log_param("model_type", args.model)
+    # -------------------------------------------------------------------------
+    # TODO: Inicia el tracking de MLflow
+    with mlflow.start_run():
 
-        ## Log de los parámetros específicos de cada tipo de modelo
-        if args.model == "elasticnet":
-            mlflow.log_param("alpha", args.alpha)
-            mlflow.log_param("l1_ratio", args.l1_ratio)
-        elif args.model == "knn":
+        if args.model == "knn":
+            model = KNeighborsRegressor(n_neighbors=args.n_neighbors)
             mlflow.log_param("n_neighbors", args.n_neighbors)
+            mlflow.log_param("model", "knn")
+        elif args.model == "elasticnet":
+            model = ElasticNet()
+            mlflow.log_param("model", "elasticnet")
+        else:
+            raise ValueError(f"Model {args.model} not supported.")
 
-        model.fit(x_train, y_train)
+        model.fit(X_train, y_train)
 
-        mse, mae, r2 = calculate_metrics(model, x_train, y_train)
-        print_metrics("Training metrics", mse, mae, r2)
-
-        ## Log de las métricas de entrenamiento
+        y_pred = model.predict(X_train)
+        mse = mean_squared_error(y_train, y_pred)
+        mae = mean_absolute_error(y_train, y_pred)
+        r2 = r2_score(y_train, y_pred)
         mlflow.log_metric("train_mse", mse)
         mlflow.log_metric("train_mae", mae)
         mlflow.log_metric("train_r2", r2)
+        print("Training metrics:")
+        print(f"  MSE: {mse}")
+        print(f"  MAE: {mae}")
+        print(f"  R2: {r2}")
 
-        mse, mae, r2 = calculate_metrics(model, x_test, y_test)
-        print_metrics("Testing metrics", mse, mae, r2)
-
-        ## Log de las métricas de test
+        y_pred = model.predict(X_test)
+        mse = mean_squared_error(y_test, y_pred)
+        mae = mean_absolute_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
         mlflow.log_metric("test_mse", mse)
         mlflow.log_metric("test_mae", mae)
         mlflow.log_metric("test_r2", r2)
+        print("Testing metrics:")
+        print(f"  MSE: {mse}")
+        print(f"  MAE: {mae}")
+        print(f"  R2: {r2}")
 
-        ## Ya no se requiere la función save_model_if_better,
-        ## ya que el modelo se guarda en el experimento de MLflow
-        # save_model_if_better(model, x_test, y_test)
+        # Registra el modelo usando 'registered_model_name' en lugar de 'artifact_path'
         mlflow.sklearn.log_model(
-            sk_model=model,
-            artifact_path="model",
-            input_example=x_train[:1],
+            model, artifact_path="model", registered_model_name=args.model
         )
+    # -------------------------------------------------------------------------
 
 
 if __name__ == "__main__":
