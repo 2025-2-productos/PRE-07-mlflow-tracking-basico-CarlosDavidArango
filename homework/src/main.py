@@ -1,3 +1,8 @@
+# Se importa MLflow y uuid
+import uuid
+
+import mlflow
+
 from homework.src._internals.calculate_metrics import calculate_metrics
 from homework.src._internals.parse_argument import parse_argument
 from homework.src._internals.prepare_data import prepare_data
@@ -30,6 +35,25 @@ def main():
     print_metrics("Testing metrics", mse, mae, r2)
 
     save_model_if_better(model, x_test, y_test)
+
+    ## Se inicia un experimento en MLflow
+    mlflow.set_experiment("wine_quality_experiment")
+    run_name = f"{args.model}_{uuid.uuid4().hex[:8]}"
+    with mlflow.start_run(run_name=run_name):
+
+        ## log de los parámetros generales y del tipo de modelo
+        mlflow.log_param("file_path", FILE_PATH)
+        mlflow.log_param("test_size", TEST_SIZE)
+        mlflow.log_param("random_state", RANDOM_STATE)
+        mlflow.log_param("model_type", args.model)
+
+        ## Log de los parámetros específicos de cada tipo de modelo
+
+        if args.model == "elasticnet":
+            mlflow.log_param("alpha", args.alpha)
+            mlflow.log_param("l1_ratio", args.l1_ratio)
+        elif args.model == "knn":
+            mlflow.log_param("n_neighbors", args.n_neighbors)
 
 
 if __name__ == "__main__":
